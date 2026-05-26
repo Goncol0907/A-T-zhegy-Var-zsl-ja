@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A Tűzhegy Varázslója</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Google Fonts: Cinzel (fantasy display) + Crimson Text (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet" />
+  <!-- Font Awesome icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+</head>
+<body>
+
+<!-- ===== PARTICLE CANVAS (background embers) ===== -->
+<canvas id="ember-canvas"></canvas>
+
+<!-- ===== LOADING SCREEN ===== -->
+<div id="loading-screen">
+  <div class="loading-content">
+    <div class="loading-mountain">⛰️</div>
+    <div class="loading-title">A Tűzhegy Varázslója</div>
+    <div class="loading-bar-wrap"><div class="loading-bar" id="loading-bar"></div></div>
+    <div class="loading-text" id="loading-text">A könyv lapozása folyamatban...</div>
+  </div>
+</div>
+
+<!-- ===== MAIN MENU ===== -->
+<div id="main-menu" class="screen hidden">
+  <div class="menu-bg-overlay"></div>
+  <div class="menu-container">
+    <div class="title-block">
+      <div class="title-sub">FIGHTING FANTASY</div>
+      <h1 class="game-title">A Tűzhegy<br/><span class="title-accent">Varázslója</span></h1>
+      <div class="title-sub">Steve Jackson & Ian Livingstone</div>
+    </div>
+    <nav class="main-nav">
+      <button class="menu-btn primary" id="btn-new-game"><i class="fas fa-dragon"></i> Új Kaland</button>
+      <button class="menu-btn" id="btn-continue" disabled><i class="fas fa-bookmark"></i> Folytatás</button>
+      <button class="menu-btn" id="btn-rules"><i class="fas fa-scroll"></i> Szabályok</button>
+      <button class="menu-btn danger" id="btn-delete-save" style="display:none"><i class="fas fa-trash"></i> Mentés Törlése</button>
+    </nav>
+    <div class="menu-footer">Magyar kiadás · 1989 · Digitális Adaptáció</div>
+  </div>
+</div>
+
+<!-- ===== CHARACTER CREATION ===== -->
+<div id="char-creation" class="screen hidden">
+  <div class="panel char-panel">
+    <h2 class="panel-title"><i class="fas fa-hat-wizard"></i> Hős Teremtése</h2>
+    <p class="panel-intro">Dobj kockával, hogy megtudd hős képességeidet. A sors irányítja, mennyi esélyed van!</p>
+
+    <div class="stat-roll-grid">
+      <!-- ÜGYESSÉG -->
+      <div class="stat-card" id="card-ugyesseg">
+        <div class="stat-icon"><i class="fas fa-sword"></i></div>
+        <div class="stat-name">ÜGYESSÉG</div>
+        <div class="stat-formula">1 kocka + 6</div>
+        <div class="stat-value" id="val-ugyesseg">?</div>
+        <button class="roll-btn" data-stat="ugyesseg"><i class="fas fa-dice-d6"></i> Dobj!</button>
+      </div>
+      <!-- ÉLETERŐ -->
+      <div class="stat-card" id="card-eletero">
+        <div class="stat-icon"><i class="fas fa-heart"></i></div>
+        <div class="stat-name">ÉLETERŐ</div>
+        <div class="stat-formula">2 kocka + 12</div>
+        <div class="stat-value" id="val-eletero">?</div>
+        <button class="roll-btn" data-stat="eletero"><i class="fas fa-dice-d6"></i> Dobj!</button>
+      </div>
+      <!-- SZERENCSE -->
+      <div class="stat-card" id="card-szerencse">
+        <div class="stat-icon"><i class="fas fa-star"></i></div>
+        <div class="stat-name">SZERENCSE</div>
+        <div class="stat-formula">1 kocka + 6</div>
+        <div class="stat-value" id="val-szerencse">?</div>
+        <button class="roll-btn" data-stat="szerencse"><i class="fas fa-dice-d6"></i> Dobj!</button>
+      </div>
+    </div>
+
+    <div class="potion-select">
+      <h3><i class="fas fa-flask"></i> Válassz egy Varázsitalt</h3>
+      <div class="potion-options">
+        <label class="potion-opt">
+          <input type="radio" name="potion" value="ugyesseg" />
+          <span class="potion-label"><i class="fas fa-bolt"></i> Ügyesség Itala<br/><small>Visszaállítja ügyességed</small></span>
+        </label>
+        <label class="potion-opt">
+          <input type="radio" name="potion" value="eletero" />
+          <span class="potion-label"><i class="fas fa-heart-pulse"></i> Erő Itala<br/><small>Visszaállítja életerőd</small></span>
+        </label>
+        <label class="potion-opt">
+          <input type="radio" name="potion" value="szerencse" />
+          <span class="potion-label"><i class="fas fa-star"></i> Szerencse Itala<br/><small>+1 szerencse + visszaállít</small></span>
+        </label>
+      </div>
+    </div>
+
+    <button class="menu-btn primary big" id="btn-start-game" disabled>
+      <i class="fas fa-dungeon"></i> Kaland Kezdete!
+    </button>
+    <button class="menu-btn back-btn" id="btn-back-menu"><i class="fas fa-arrow-left"></i> Vissza</button>
+  </div>
+</div>
+
+<!-- ===== RULES SCREEN ===== -->
+<div id="rules-screen" class="screen hidden">
+  <div class="panel rules-panel">
+    <h2 class="panel-title"><i class="fas fa-scroll"></i> Játékszabályok</h2>
+    <div class="rules-content">
+      <h3>⚔️ Harc</h3>
+      <p>Minden harcforduló: dobj 2 kockával, add hozzá ÜGYESSÉG pontjaidat → Támadóerő. Az ellenfél szintén dob. A magasabb Támadóerőjű sebzi a másikat 2 ÉLETERŐ ponttal. Döntetlen = újabb forduló.</p>
+      <h3>🍀 Szerencse Próba</h3>
+      <p>Dobj 2 kockával. Ha az eredmény ≤ jelenlegi SZERENCSE pontjaid → Szerencsés! Minden próba után −1 Szerencse.</p>
+      <h3>🍖 Élelmiszer</h3>
+      <p>Bármikor ehetsz (harc közben nem). Evés: +4 Életerő, −1 Élelmiszer adag. Indulásnál 10 adag.</p>
+      <h3>🧪 Varázsitalok</h3>
+      <p>Háromfajta ital egyikét hozhatod magaddal. Bármikor megihatod, de csak egyszer.</p>
+      <h3>💰 Felszerelés</h3>
+      <p>Kard + Bőrpáncél + Hátizsák + Lámpa az alap felszerelés. Az arany és tárgyak gyűjthetők.</p>
+    </div>
+    <button class="menu-btn back-btn" id="btn-rules-back"><i class="fas fa-arrow-left"></i> Vissza</button>
+  </div>
+</div>
+
+<!-- ===== GAME SCREEN ===== -->
+<div id="game-screen" class="screen hidden">
+
+  <!-- TOP HUD -->
+  <header class="game-hud">
+    <div class="hud-left">
+      <button class="hud-btn" id="btn-toggle-char"><i class="fas fa-user-shield"></i></button>
+      <button class="hud-btn" id="btn-toggle-inv"><i class="fas fa-backpack"></i></button>
+      <button class="hud-btn" id="btn-save"><i class="fas fa-save"></i></button>
+    </div>
+    <div class="hud-center">
+      <div class="hud-title">A Tűzhegy Varázslója</div>
+      <div class="section-indicator">Szakasz <span id="hud-section">1</span></div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-stat"><i class="fas fa-sword"></i> <span id="hud-ugy">?</span></div>
+      <div class="hud-stat"><i class="fas fa-heart"></i> <span id="hud-ele">?</span></div>
+      <div class="hud-stat"><i class="fas fa-star"></i> <span id="hud-sze">?</span></div>
+      <button class="hud-btn danger" id="btn-menu"><i class="fas fa-bars"></i></button>
+    </div>
+  </header>
+
+  <!-- MAIN GAME AREA -->
+  <main class="game-main">
+
+    <!-- CHARACTER PANEL (sidebar) -->
+    <aside class="char-sidebar" id="char-sidebar">
+      <div class="sidebar-header">Kalandlap</div>
+      <div class="char-stat-block">
+        <div class="char-stat">
+          <span class="cs-label"><i class="fas fa-sword"></i> Ügyesség</span>
+          <div class="cs-bar-wrap">
+            <div class="cs-bar ugy-bar" id="bar-ugy"></div>
+          </div>
+          <span class="cs-val" id="cs-ugy">?</span>/<span class="cs-max" id="cs-ugy-max">?</span>
+        </div>
+        <div class="char-stat">
+          <span class="cs-label"><i class="fas fa-heart"></i> Életerő</span>
+          <div class="cs-bar-wrap">
+            <div class="cs-bar ele-bar" id="bar-ele"></div>
+          </div>
+          <span class="cs-val" id="cs-ele">?</span>/<span class="cs-max" id="cs-ele-max">?</span>
+        </div>
+        <div class="char-stat">
+          <span class="cs-label"><i class="fas fa-star"></i> Szerencse</span>
+          <div class="cs-bar-wrap">
+            <div class="cs-bar sze-bar" id="bar-sze"></div>
+          </div>
+          <span class="cs-val" id="cs-sze">?</span>/<span class="cs-max" id="cs-sze-max">?</span>
+        </div>
+      </div>
+      <div class="char-extra">
+        <div class="ce-row"><i class="fas fa-coins"></i> Arany: <strong id="cs-arany">0</strong></div>
+        <div class="ce-row"><i class="fas fa-drumstick-bite"></i> Élelmiszer: <strong id="cs-elel">10</strong></div>
+        <div class="ce-row"><i class="fas fa-flask"></i> Ital: <strong id="cs-ital">1</strong></div>
+      </div>
+      <div class="sidebar-actions">
+        <button class="action-btn eat-btn" id="btn-eat"><i class="fas fa-drumstick-bite"></i> Étkezés (+4 ÉL)</button>
+        <button class="action-btn drink-btn" id="btn-drink"><i class="fas fa-flask"></i> Ital elfogyasztása</button>
+      </div>
+    </aside>
+
+    <!-- STORY AREA -->
+    <section class="story-area">
+      <div class="section-header">
+        <div class="section-num" id="section-num">1</div>
+        <div class="section-ornament">⸻ ✦ ⸻</div>
+      </div>
+      <div class="story-text" id="story-text"></div>
+      <div class="story-actions" id="story-actions"></div>
+    </section>
+
+    <!-- INVENTORY PANEL (sidebar) -->
+    <aside class="inv-sidebar hidden" id="inv-sidebar">
+      <div class="sidebar-header">Felszerelés</div>
+      <div class="inv-grid" id="inv-grid">
+        <!-- Items injected here -->
+      </div>
+    </aside>
+
+  </main>
+
+</div>
+
+<!-- ===== COMBAT OVERLAY ===== -->
+<div id="combat-overlay" class="overlay hidden">
+  <div class="combat-panel">
+    <div class="combat-title"><i class="fas fa-swords"></i> Harc!</div>
+
+    <div class="combatants">
+      <div class="combatant player-side">
+        <div class="comb-name">Te</div>
+        <div class="comb-hp" id="comb-player-hp"></div>
+        <div class="comb-ugy" id="comb-player-ugy"></div>
+      </div>
+      <div class="vs-orb">VS</div>
+      <div class="combatant enemy-side">
+        <div class="comb-name" id="comb-enemy-name">Ellenfél</div>
+        <div class="comb-hp" id="comb-enemy-hp"></div>
+        <div class="comb-ugy" id="comb-enemy-ugy"></div>
+      </div>
+    </div>
+
+    <!-- Dice display -->
+    <div class="dice-area">
+      <div class="dice-group">
+        <div class="die" id="die-p1">?</div>
+        <div class="die" id="die-p2">?</div>
+        <span class="dice-label">Te</span>
+      </div>
+      <div class="attack-strength">
+        <span id="atk-player">—</span> vs <span id="atk-enemy">—</span>
+      </div>
+      <div class="dice-group">
+        <div class="die" id="die-e1">?</div>
+        <div class="die" id="die-e2">?</div>
+        <span class="dice-label">Ellenfél</span>
+      </div>
+    </div>
+
+    <div class="combat-log" id="combat-log"></div>
+
+    <div class="combat-actions">
+      <button class="combat-btn primary" id="btn-fight-round"><i class="fas fa-swords"></i> Támadás!</button>
+      <button class="combat-btn luck" id="btn-fight-luck"><i class="fas fa-star"></i> Szerencse Próba</button>
+      <button class="combat-btn escape" id="btn-fight-escape"><i class="fas fa-running"></i> Menekülés</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== LUCK TEST OVERLAY ===== -->
+<div id="luck-overlay" class="overlay hidden">
+  <div class="luck-panel">
+    <div class="luck-title"><i class="fas fa-star"></i> Szerencse Próba</div>
+    <div class="luck-current">Jelenlegi Szerencse: <span id="luck-current-val">?</span></div>
+    <div class="luck-dice-area">
+      <div class="die large" id="luck-die1">?</div>
+      <div class="die large" id="luck-die2">?</div>
+    </div>
+    <div class="luck-result hidden" id="luck-result"></div>
+    <div class="luck-actions">
+      <button class="combat-btn primary" id="btn-luck-roll"><i class="fas fa-dice"></i> Dobj!</button>
+      <button class="combat-btn" id="btn-luck-close" style="display:none">Folytatás</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TOAST NOTIFICATIONS ===== -->
+<div id="toast-container"></div>
+
+<!-- ===== DEATH/GAME OVER SCREEN ===== -->
+<div id="gameover-overlay" class="overlay hidden">
+  <div class="gameover-panel">
+    <div class="gameover-icon">💀</div>
+    <h2 class="gameover-title">Meghaltál!</h2>
+    <p class="gameover-text">Életerőd elfogyott. A Tűzhegy megőrzi titkát...<br/>De a hősök nem adják fel!</p>
+    <button class="menu-btn primary" id="btn-restart"><i class="fas fa-redo"></i> Újra Kezdem</button>
+    <button class="menu-btn" id="btn-gameover-menu"><i class="fas fa-home"></i> Főmenü</button>
+  </div>
+</div>
+
+<!-- ===== VICTORY SCREEN ===== -->
+<div id="victory-overlay" class="overlay hidden">
+  <div class="victory-panel">
+    <div class="victory-icon">🏆</div>
+    <h2 class="victory-title">Győztél!</h2>
+    <p class="victory-text">Legyőzted a Tűzhegy Varázslóját!<br/>A legenda tovább él...</p>
+    <button class="menu-btn primary" id="btn-victory-menu"><i class="fas fa-home"></i> Főmenü</button>
+  </div>
+</div>
+
+<!-- ===== SAVE NOTIFICATION ===== -->
+<div id="save-notif" class="save-notif hidden">
+  <i class="fas fa-check-circle"></i> Mentve!
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
