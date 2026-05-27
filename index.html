@@ -131,6 +131,7 @@
   <header class="game-hud">
     <div class="hud-left">
       <button class="hud-btn" id="btn-toggle-char"><i class="fas fa-user-shield"></i></button>
+      <button class="hud-btn" id="btn-toggle-map" title="Térkép"><i class="fas fa-map"></i></button>
       <button class="hud-btn" id="btn-toggle-inv"><i class="fas fa-backpack"></i></button>
       <button class="hud-btn" id="btn-save"><i class="fas fa-save"></i></button>
     </div>
@@ -267,6 +268,34 @@
     <div class="luck-actions">
       <button class="combat-btn primary" id="btn-luck-roll"><i class="fas fa-dice"></i> Dobj!</button>
       <button class="combat-btn" id="btn-luck-close" style="display:none">Folytatás</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MAP OVERLAY ===== -->
+<div id="map-overlay" class="map-overlay hidden">
+  <div class="map-panel">
+    <div class="map-header">
+      <div class="map-title"><i class="fas fa-map"></i> Tűzhegy Barlangrendszere</div>
+      <div class="map-legend">
+        <span class="leg-item"><span class="leg-dot visited"></span> Járt</span>
+        <span class="leg-item"><span class="leg-dot current"></span> Jelenlegi</span>
+        <span class="leg-item"><span class="leg-dot combat"></span> Harc</span>
+        <span class="leg-item"><span class="leg-dot luck"></span> Szerencse</span>
+      </div>
+      <button class="map-close-btn" id="btn-map-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="map-canvas-wrap">
+      <canvas id="map-canvas"></canvas>
+      <div class="map-hint">Görgess / csíptess a nagyításhoz · Húzd a mozgatáshoz</div>
+    </div>
+    <div class="map-footer">
+      <span id="map-stats">Felfedezett: <strong id="map-visited-count">0</strong> szakasz · Útvonal: <strong id="map-steps">0</strong> lépés</span>
+      <div class="map-zoom-btns">
+        <button class="map-zoom-btn" id="btn-map-zoom-in"><i class="fas fa-plus"></i></button>
+        <button class="map-zoom-btn" id="btn-map-zoom-out"><i class="fas fa-minus"></i></button>
+        <button class="map-zoom-btn" id="btn-map-center"><i class="fas fa-crosshairs"></i></button>
+      </div>
     </div>
   </div>
 </div>

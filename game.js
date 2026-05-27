@@ -266,6 +266,11 @@ function initGameUI() {
     initMainMenu();
   };
 
+  // Map button
+  document.getElementById('btn-toggle-map').onclick = () => {
+    toggleMap();
+  };
+
   updateUI();
   renderInventory();
 }
@@ -319,6 +324,9 @@ async function goToSection(num) {
     await delay(500);
     showOverlay('gameover-overlay');
   }
+
+  // Update map
+  mapUpdateNode(num);
 
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -937,4 +945,384 @@ function rollDice(n = 1, sides = 6) {
 // ═══════════════════════════════════════════════════════════════
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TÉRKÉP RENDSZER — dungeon map automatikus rajzolása
+//  Algoritmus: a szakaszok előfordulási sorrendje alapján
+//  determinisztikusan elhelyezi a csomópontokat egy
+//  kör-alapú gráf-elrendezéssel (force-directed lite).
+// ═══════════════════════════════════════════════════════════════
+
+const MAP = {
+  canvas: null,
+  ctx: null,
+  wrap: null,
+  nodes: {},        // sectionNum -> { x, y, type, label }
+  edges: [],        // [{from, to}]
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  dragging: false,
+  lastMX: 0,
+  lastMY: 0,
+  initialized: false,
+  pendingPulse: null,   // section number to pulse-animate
+  animFrame: null,
+  NODE_R: 14,
+  LEVEL_GAP: 90,
+  SIBLING_GAP: 72,
+};
+
+// Section type classification
+function classifySection(num) {
+  const s = SECTIONS[String(num)];
+  if (!s) return 'normal';
+  if (s.harc && s.harc.length > 0) return 'combat';
+  if (s.szerencse_proba) return 'luck';
+  if (s.valasztasok && s.valasztasok.length === 0) return 'end';
+  return 'normal';
+}
+
+// Node colours
+const NODE_COLORS = {
+  normal:  { fill: 'rgba(60,42,18,0.92)', stroke: 'rgba(140,100,30,0.8)',  text: '#d4b896', glow: 'rgba(140,100,30,0.3)' },
+  combat:  { fill: 'rgba(60,8,8,0.92)',   stroke: 'rgba(180,30,20,0.9)',   text: '#ff9988', glow: 'rgba(200,20,0,0.4)' },
+  luck:    { fill: 'rgba(40,35,5,0.92)',   stroke: 'rgba(180,150,20,0.9)', text: '#f5d060', glow: 'rgba(180,150,0,0.4)' },
+  end:     { fill: 'rgba(5,25,5,0.92)',    stroke: 'rgba(20,120,20,0.9)',  text: '#88dd88', glow: 'rgba(20,120,0,0.4)' },
+  current: { fill: 'rgba(120,40,0,0.98)',  stroke: '#ff6b35',              text: '#fff8f0', glow: 'rgba(255,107,53,0.7)' },
+};
+
+// ─── Coordinate layout ───────────────────────────────────────
+// We build a tree/DAG from the history, assigning grid positions.
+// Each node gets a "depth" = step in history it first appeared.
+// Siblings at same depth spread horizontally.
+
+function computeNodePositions() {
+  const history = gameState.history || [];
+  const visited = gameState.visited || [];
+
+  // Build depth map from history (first-visit depth)
+  const depthOf = {};
+  history.forEach((sec, i) => {
+    if (!(sec in depthOf)) depthOf[sec] = i;
+  });
+  // Visited-but-not-in-history get assigned depth too
+  visited.forEach(sec => {
+    if (!(sec in depthOf)) depthOf[sec] = Object.keys(depthOf).length;
+  });
+
+  // Group by depth
+  const byDepth = {};
+  for (const [sec, d] of Object.entries(depthOf)) {
+    if (!byDepth[d]) byDepth[d] = [];
+    byDepth[d].push(Number(sec));
+  }
+
+  // Assign (x, y) — depth = Y axis, sibling index = X axis
+  const newNodes = {};
+  for (const [d, secs] of Object.entries(byDepth)) {
+    const depth = Number(d);
+    secs.forEach((sec, idx) => {
+      const count = secs.length;
+      const x = (idx - (count - 1) / 2) * MAP.SIBLING_GAP;
+      const y = depth * MAP.LEVEL_GAP;
+      // Preserve existing position if already placed (smooth drift prevention)
+      if (MAP.nodes[sec]) {
+        newNodes[sec] = { ...MAP.nodes[sec], type: classifySection(sec) };
+      } else {
+        newNodes[sec] = { x, y, type: classifySection(sec), label: String(sec) };
+      }
+    });
+  }
+  MAP.nodes = newNodes;
+
+  // Build edges from history sequence
+  MAP.edges = [];
+  const seenEdges = new Set();
+  for (let i = 0; i < history.length - 1; i++) {
+    const key = `${history[i]}-${history[i+1]}`;
+    if (!seenEdges.has(key)) {
+      seenEdges.add(key);
+      MAP.edges.push({ from: history[i], to: history[i+1] });
+    }
+  }
+}
+
+// ─── Init canvas & events ────────────────────────────────────
+function initMap() {
+  if (MAP.initialized) return;
+  MAP.canvas = document.getElementById('map-canvas');
+  MAP.ctx    = MAP.canvas.getContext('2d');
+  MAP.wrap   = document.querySelector('.map-canvas-wrap');
+  MAP.initialized = true;
+
+  resizeMapCanvas();
+  window.addEventListener('resize', resizeMapCanvas);
+
+  // Mouse drag
+  MAP.canvas.addEventListener('mousedown', e => {
+    MAP.dragging = true;
+    MAP.lastMX = e.clientX; MAP.lastMY = e.clientY;
+  });
+  window.addEventListener('mousemove', e => {
+    if (!MAP.dragging) return;
+    MAP.offsetX += e.clientX - MAP.lastMX;
+    MAP.offsetY += e.clientY - MAP.lastMY;
+    MAP.lastMX = e.clientX; MAP.lastMY = e.clientY;
+    drawMap();
+  });
+  window.addEventListener('mouseup', () => { MAP.dragging = false; });
+
+  // Touch drag
+  MAP.canvas.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      MAP.dragging = true;
+      MAP.lastMX = e.touches[0].clientX;
+      MAP.lastMY = e.touches[0].clientY;
+    }
+  }, { passive: true });
+  MAP.canvas.addEventListener('touchmove', e => {
+    if (!MAP.dragging || e.touches.length !== 1) return;
+    MAP.offsetX += e.touches[0].clientX - MAP.lastMX;
+    MAP.offsetY += e.touches[0].clientY - MAP.lastMY;
+    MAP.lastMX = e.touches[0].clientX;
+    MAP.lastMY = e.touches[0].clientY;
+    drawMap();
+  }, { passive: true });
+  MAP.canvas.addEventListener('touchend', () => { MAP.dragging = false; });
+
+  // Wheel zoom
+  MAP.canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 0.91;
+    MAP.scale = Math.max(0.3, Math.min(3, MAP.scale * factor));
+    drawMap();
+  }, { passive: false });
+
+  // Zoom buttons
+  document.getElementById('btn-map-zoom-in').onclick  = () => { MAP.scale = Math.min(3, MAP.scale * 1.2); drawMap(); };
+  document.getElementById('btn-map-zoom-out').onclick = () => { MAP.scale = Math.max(0.3, MAP.scale * 0.83); drawMap(); };
+  document.getElementById('btn-map-center').onclick   = () => { centerMap(); drawMap(); };
+  document.getElementById('btn-map-close').onclick    = () => { toggleMap(); };
+}
+
+function resizeMapCanvas() {
+  if (!MAP.wrap) return;
+  MAP.canvas.width  = MAP.wrap.clientWidth;
+  MAP.canvas.height = MAP.wrap.clientHeight;
+  drawMap();
+}
+
+function centerMap() {
+  const nodes = Object.values(MAP.nodes);
+  if (!nodes.length) { MAP.offsetX = MAP.canvas.width / 2; MAP.offsetY = 60; return; }
+  const cur = MAP.nodes[gameState.section];
+  if (cur) {
+    MAP.offsetX = MAP.canvas.width  / 2 - cur.x * MAP.scale;
+    MAP.offsetY = MAP.canvas.height / 2 - cur.y * MAP.scale;
+  } else {
+    const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    MAP.offsetX = MAP.canvas.width  / 2 - cx * MAP.scale;
+    MAP.offsetY = MAP.canvas.height / 2 - cy * MAP.scale;
+  }
+}
+
+// ─── Draw ─────────────────────────────────────────────────────
+function drawMap() {
+  if (!MAP.canvas || !MAP.ctx) return;
+  const ctx = MAP.ctx;
+  const W = MAP.canvas.width, H = MAP.canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.translate(MAP.offsetX, MAP.offsetY);
+  ctx.scale(MAP.scale, MAP.scale);
+
+  // ── Draw edges ──
+  MAP.edges.forEach(edge => {
+    const a = MAP.nodes[edge.from];
+    const b = MAP.nodes[edge.to];
+    if (!a || !b) return;
+    ctx.beginPath();
+    // Slight curve for visual interest
+    const mx = (a.x + b.x) / 2 + (b.y - a.y) * 0.08;
+    const my = (a.y + b.y) / 2;
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo(mx, my, b.x, b.y);
+    ctx.strokeStyle = 'rgba(120,85,30,0.45)';
+    ctx.lineWidth = 2 / MAP.scale;
+    ctx.setLineDash([5 / MAP.scale, 4 / MAP.scale]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrow head at destination
+    const angle = Math.atan2(b.y - my, b.x - mx);
+    const aSize = 6 / MAP.scale;
+    ctx.beginPath();
+    ctx.moveTo(b.x - Math.cos(angle) * MAP.NODE_R, b.y - Math.sin(angle) * MAP.NODE_R);
+    ctx.lineTo(
+      b.x - Math.cos(angle) * MAP.NODE_R - Math.cos(angle - 0.4) * aSize,
+      b.y - Math.sin(angle) * MAP.NODE_R - Math.sin(angle - 0.4) * aSize
+    );
+    ctx.lineTo(
+      b.x - Math.cos(angle) * MAP.NODE_R - Math.cos(angle + 0.4) * aSize,
+      b.y - Math.sin(angle) * MAP.NODE_R - Math.sin(angle + 0.4) * aSize
+    );
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(140,100,40,0.7)';
+    ctx.fill();
+  });
+
+  // ── Draw nodes ──
+  const currentSec = gameState.section;
+
+  Object.entries(MAP.nodes).forEach(([sec, node]) => {
+    const isCurrent = Number(sec) === currentSec;
+    const col = isCurrent ? NODE_COLORS.current : NODE_COLORS[node.type] || NODE_COLORS.normal;
+    const r = MAP.NODE_R / MAP.scale;
+
+    // Glow
+    if (isCurrent) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, (MAP.NODE_R + 8) / MAP.scale, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, (MAP.NODE_R + 10) / MAP.scale);
+      g.addColorStop(0, col.glow);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fill();
+    } else if (col.glow) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, (MAP.NODE_R + 4) / MAP.scale, 0, Math.PI * 2);
+      const g2 = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, (MAP.NODE_R + 4) / MAP.scale);
+      g2.addColorStop(0, col.glow.replace('0.4', '0.15').replace('0.3', '0.1'));
+      g2.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g2;
+      ctx.fill();
+    }
+
+    // Circle fill
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = col.fill;
+    ctx.fill();
+    ctx.strokeStyle = col.stroke;
+    ctx.lineWidth = (isCurrent ? 2.5 : 1.5) / MAP.scale;
+    ctx.stroke();
+
+    // Section number label
+    ctx.fillStyle = col.text;
+    ctx.font = `${isCurrent ? 700 : 500} ${Math.round(11 / MAP.scale)}px "Cinzel", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(node.label, node.x, node.y);
+
+    // Type icon (tiny, below node)
+    if (node.type !== 'normal') {
+      const icons = { combat: '⚔', luck: '★', end: '✦' };
+      const ic = icons[node.type];
+      if (ic) {
+        ctx.font = `${Math.round(8 / MAP.scale)}px sans-serif`;
+        ctx.fillStyle = col.stroke;
+        ctx.fillText(ic, node.x, node.y + r + (7 / MAP.scale));
+      }
+    }
+  });
+
+  ctx.restore();
+
+  // ── Pulse animation for newest node ──
+  if (MAP.pendingPulse !== null) {
+    drawPulse(MAP.pendingPulse);
+  }
+}
+
+// Animated pulse ring on newly added node
+function drawPulse(sec) {
+  const node = MAP.nodes[sec];
+  if (!node) { MAP.pendingPulse = null; return; }
+
+  let startTime = null;
+  const DURATION = 800;
+
+  function animatePulse(ts) {
+    if (!startTime) startTime = ts;
+    const elapsed = ts - startTime;
+    const t = Math.min(elapsed / DURATION, 1);
+
+    drawMap();
+
+    const ctx = MAP.ctx;
+    ctx.save();
+    ctx.translate(MAP.offsetX, MAP.offsetY);
+    ctx.scale(MAP.scale, MAP.scale);
+
+    const maxR = (MAP.NODE_R + 20) / MAP.scale;
+    const curR = (MAP.NODE_R / MAP.scale) + maxR * t;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, curR, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,107,53,${0.7 * (1 - t)})`;
+    ctx.lineWidth = 2 / MAP.scale;
+    ctx.stroke();
+    ctx.restore();
+
+    if (t < 1) {
+      MAP.animFrame = requestAnimationFrame(animatePulse);
+    } else {
+      MAP.pendingPulse = null;
+      MAP.animFrame = null;
+      drawMap();
+    }
+  }
+  if (MAP.animFrame) cancelAnimationFrame(MAP.animFrame);
+  MAP.animFrame = requestAnimationFrame(animatePulse);
+}
+
+// ─── Public API ───────────────────────────────────────────────
+
+/** Called from goToSection() every time we navigate */
+function mapUpdateNode(sectionNum) {
+  if (!MAP.initialized) return;
+  const wasNew = !(sectionNum in MAP.nodes);
+  computeNodePositions();
+  updateMapStats();
+  if (wasNew) {
+    MAP.pendingPulse = sectionNum;
+    centerMap();
+  }
+  if (document.getElementById('map-overlay').classList.contains('hidden')) {
+    // map not open — just compute, don't draw
+    return;
+  }
+  drawMap();
+}
+
+/** Toggle map panel open/closed */
+function toggleMap() {
+  const overlay = document.getElementById('map-overlay');
+  const btn = document.getElementById('btn-toggle-map');
+  const isOpen = !overlay.classList.contains('hidden');
+
+  if (isOpen) {
+    overlay.classList.add('hidden');
+    btn.classList.remove('active');
+  } else {
+    overlay.classList.remove('hidden');
+    btn.classList.add('active');
+    initMap();
+    computeNodePositions();
+    updateMapStats();
+    centerMap();
+    drawMap();
+    if (MAP.pendingPulse !== null) drawPulse(MAP.pendingPulse);
+  }
+}
+
+function updateMapStats() {
+  const vc = document.getElementById('map-visited-count');
+  const ms = document.getElementById('map-steps');
+  if (vc) vc.textContent = Object.keys(MAP.nodes).length;
+  if (ms) ms.textContent = (gameState.history || []).length;
 }
